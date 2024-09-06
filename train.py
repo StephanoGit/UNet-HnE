@@ -4,9 +4,9 @@ from model import UNet
 from dataset import dataset_loader
 import torch.optim
 import torch.nn
-from eval_metrics import train_fn, valid_fn, custom_cross_entropy
+from eval_metrics import train_fn, valid_fn, custom_cross_entropy, Tversky_Focal_Loss
 
-from utils import save_predictions_as_imgs
+from utils import save_predictions_as_imgs, plot_metrics, save_checkpoint
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
@@ -87,22 +87,32 @@ if __name__ == "__main__":
     print(f"Train Images: {len(train_loader.dataset)}")
     print(f"Valid Images: {len(valid_loader.dataset)}")
 
-    model = UNet(3, N_CLASSES, dropout_rate=0.3).to(DEVICE)
+    model = UNet(3, N_CLASSES, dropout_rate=0.5).to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
-    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
+    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
 
     if N_CLASSES == 1:
         loss_fn = torch.nn.BCEWithLogitsLoss()
     else:
-        loss_fn = custom_cross_entropy
+        # loss_fn = custom_cross_entropy
+        loss_fn = Tversky_Focal_Loss
 
     scaler = torch.cuda.amp.GradScaler()
 
+    best_dice = 0.0
+    train_loss_all, train_acc_all, train_dice_all = [], [], []
+    valid_loss_all, valid_acc_all, valid_dice_all = [], [], []
+
     for e in range(EPOCHS):
         print(f"Epoch {e+1}/{EPOCHS}")
+        print(f"Learning Rate: {scheduler.get_last_lr()[0]:.8f}")
+
         train_loss, train_acc, train_dice = train_fn(
             train_loader, model, optimizer, loss_fn, scaler, DEVICE
         )
+        train_loss_all.append(train_loss)
+        train_acc_all.append(train_acc)
+        train_dice_all.append(train_dice)
 
         print(f"Train AVG. Loss: {train_loss:.5f}")
         print(f"Train AVG. Accuracy: {train_acc}")
@@ -111,12 +121,32 @@ if __name__ == "__main__":
         valid_loss, valid_acc, valid_dice = valid_fn(
             valid_loader, model, loss_fn, DEVICE
         )
+        valid_loss_all.append(valid_loss)
+        valid_acc_all.append(valid_acc)
+        valid_dice_all.append(valid_dice)
+
+        if valid_dice.mean() > best_dice:
+            best_dice = valid_dice.mean()
+            checkpoint = {
+                "state_dict": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+            }
+
+            save_checkpoint(checkpoint, file_name=f"model_{e+1}.pth.tar")
 
         print(f"Valid AVG. Loss: {valid_loss:.5f}")
         print(f"Valid AVG. Accuracy: {valid_acc}")
         print(f"Valid AVG. Dice Score: {valid_dice}")
-        print(f"Learning Rate: {scheduler.get_last_lr()[0]:.8f}")
 
         save_predictions_as_imgs(valid_loader, model, folder=f"predictions_epoch{e+1}/")
         scheduler.step(valid_loss)
         print("\n")
+
+    plot_metrics(
+        train_loss_all,
+        train_acc_all,
+        train_dice_all,
+        valid_loss_all,
+        valid_acc_all,
+        valid_dice_all,
+    )

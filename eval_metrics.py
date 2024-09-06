@@ -2,6 +2,59 @@ from tqdm import tqdm
 import torch
 import numpy as np
 import torch.nn.functional as F
+import torch.nn as nn
+
+
+class Tversky_Focal_Loss(nn.Module):
+    def __init__(
+        self, device, weight=None, alpha=0.85, beta=0.15, gamma=3.0, epsilon=1e-7
+    ):
+        super(Tversky_Focal_Loss, self).__init__()
+        if weight is not None:
+            self.weight = weight.to(device=device)
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.device = device
+
+    def forward(self, activations, annotations):
+        activations = activations.float().to(self.device)
+        annotations = annotations.float().to(self.device)
+
+        probabilities = torch.softmax(activations, dim=1)
+        probabilities = torch.clamp(
+            probabilities, min=self.epsilon, max=1 - self.epsilon
+        )
+
+        # Tversky loss
+        true_pos = (probabilities * annotations).sum(dim=(0, 1, 2, 3))
+        false_neg = ((1 - probabilities) * annotations).sum(dim=(0, 1, 2, 3))
+        false_pos = (probabilities * (1 - annotations)).sum(dim=(0, 1, 2, 3))
+
+        tversky_index = (true_pos + self.epsilon) / (
+            true_pos + self.alpha * false_neg + self.beta * false_pos + self.epsilon
+        )
+        tversky_loss = 1 - tversky_index
+
+        # Focal loss
+        pt = torch.where(annotations > 0, probabilities, 1 - probabilities)
+        focal_loss = -torch.pow(1 - pt, self.gamma) * torch.log(pt)
+
+        # Apply class weights only to Focal Loss
+        if self.weight is not None:
+            focal_loss *= self.weight.view(1, -1, 1, 1)
+
+        annotation_sum = annotations.sum(dim=(0, 1, 2, 3))
+        annotation_sum = torch.clamp(annotation_sum, min=self.epsilon)
+
+        t_loss = tversky_loss.sum(dim=(0, 1, 2, 3)) / annotation_sum
+        f_loss = focal_loss.sum(dim=(0, 1, 2, 3)) / annotation_sum
+
+        # Final loss combination
+        total_loss = f_loss.mean() * 0.3 + t_loss.mean() * 0.7
+
+        return total_loss
 
 
 def custom_cross_entropy(predictions, targets):

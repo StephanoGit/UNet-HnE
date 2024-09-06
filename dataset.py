@@ -7,6 +7,7 @@ import albumentations as A
 import matplotlib.pyplot as plt
 import torch
 from collections import Counter
+from albumentations.pytorch import ToTensorV2
 
 COLOR_MAP = {
     "gray": (128, 128, 128),
@@ -104,7 +105,7 @@ class HnE(Dataset):
         return None
 
     def filter_images(self):
-        for image in os.listdir(self.img_dir):
+        for image in os.listdir(self.img_dir)[600]:
             if not image.startswith("."):
                 if self.validation is not None:
                     mask_path = os.path.join(
@@ -193,14 +194,29 @@ def dataset_loader(
         [
             A.Resize(height=img_height, width=img_width),
             A.Rotate(limit=90, p=0.5),
-            A.HorizontalFlip(p=0.3),
-            A.VerticalFlip(p=0.3),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.ElasticTransform(alpha=1.5, sigma=10, p=0.3),
+            A.CoarseDropout(
+                max_holes=8,
+                max_height=16,
+                max_width=16,
+                min_holes=1,
+                min_height=8,
+                min_width=8,
+                fill_value=0,
+                p=0.2,
+            ),
+            A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.3),
+            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
+            ToTensorV2(),
         ]
     )
 
     valid_transform = A.Compose(
         [
             A.Resize(height=img_height, width=img_width),
+            ToTensorV2(),
         ]
     )
 
@@ -248,7 +264,7 @@ def dataset_loader(
         pin_memory=pin_memory,
     )
 
-    print(train_dataset.get_class_distribution(), sample_weights)
+    print(train_dataset.get_class_distribution())
 
     # for i in range(0, 15):
     # show_image_and_mask(train_dataset, train_dataset.labels[i], i)
