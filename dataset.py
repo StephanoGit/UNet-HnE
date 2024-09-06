@@ -105,7 +105,7 @@ class HnE(Dataset):
         return None
 
     def filter_images(self):
-        for image in os.listdir(self.img_dir)[600]:
+        for image in os.listdir(self.img_dir):
             if not image.startswith("."):
                 if self.validation is not None:
                     mask_path = os.path.join(
@@ -209,14 +209,12 @@ def dataset_loader(
             ),
             A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.3),
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
-            ToTensorV2(),
         ]
     )
 
     valid_transform = A.Compose(
         [
             A.Resize(height=img_height, width=img_width),
-            ToTensorV2(),
         ]
     )
 

@@ -22,38 +22,50 @@ class Tversky_Focal_Loss(nn.Module):
         activations = activations.float().to(self.device)
         annotations = annotations.float().to(self.device)
 
-        probabilities = torch.softmax(activations, dim=1)
+        # Softmax across channels to get class probabilities
+        probabilities = torch.softmax(activations, dim=1)  # Shape: [B, C, H, W]
         probabilities = torch.clamp(
             probabilities, min=self.epsilon, max=1 - self.epsilon
         )
 
-        # Tversky loss
-        true_pos = (probabilities * annotations).sum(dim=(0, 1, 2, 3))
-        false_neg = ((1 - probabilities) * annotations).sum(dim=(0, 1, 2, 3))
-        false_pos = (probabilities * (1 - annotations)).sum(dim=(0, 1, 2, 3))
+        # Tversky loss computation
+        true_pos = (probabilities * annotations).sum(
+            dim=(2, 3)
+        )  # Sum over spatial dimensions (H, W), resulting in [B, C]
+        false_neg = ((1 - probabilities) * annotations).sum(
+            dim=(2, 3)
+        )  # Sum over spatial dimensions (H, W), resulting in [B, C]
+        false_pos = (probabilities * (1 - annotations)).sum(
+            dim=(2, 3)
+        )  # Sum over spatial dimensions (H, W), resulting in [B, C]
 
+        # Compute Tversky index per class
         tversky_index = (true_pos + self.epsilon) / (
             true_pos + self.alpha * false_neg + self.beta * false_pos + self.epsilon
-        )
-        tversky_loss = 1 - tversky_index
+        )  # Shape: [B, C]
 
-        # Focal loss
-        pt = torch.where(annotations > 0, probabilities, 1 - probabilities)
+        # Tversky loss per class, averaged over batch and classes
+        tversky_loss = 1 - tversky_index  # Shape: [B, C]
+        t_loss = tversky_loss.mean()  # Average over batch and classes
+
+        # Focal loss computation
+        pt = torch.where(
+            annotations > 0, probabilities, 1 - probabilities
+        )  # Shape: [B, C, H, W]
         focal_loss = -torch.pow(1 - pt, self.gamma) * torch.log(pt)
 
-        # Apply class weights only to Focal Loss
+        # Apply class weights if provided
         if self.weight is not None:
-            focal_loss *= self.weight.view(1, -1, 1, 1)
+            focal_loss *= self.weight.view(1, -1, 1, 1)  # Shape: [1, C, 1, 1]
 
-        annotation_sum = annotations.sum(dim=(0, 1, 2, 3))
-        annotation_sum = torch.clamp(annotation_sum, min=self.epsilon)
-
-        t_loss = tversky_loss.sum(dim=(0, 1, 2, 3)) / annotation_sum
-        f_loss = focal_loss.sum(dim=(0, 1, 2, 3)) / annotation_sum
+        # Focal loss averaged over spatial dimensions and batch
+        f_loss = focal_loss.mean(
+            dim=(2, 3)
+        )  # Average over spatial dims (H, W) resulting in [B, C]
+        f_loss = f_loss.mean()  # Average over batch and classes
 
         # Final loss combination
-        total_loss = f_loss.mean() * 0.3 + t_loss.mean() * 0.7
-
+        total_loss = f_loss * 0.2 + t_loss * 0.8
         return total_loss
 
 

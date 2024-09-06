@@ -76,7 +76,7 @@ if __name__ == "__main__":
         TRAIN_MASK_DIR,
         VALID_IMG_DIR,
         VALID_MASK_DIR,
-        8,
+        16,
         PIN_MEMORY,
         BATCH_SIZE,
         IMG_HEIGHT,
@@ -95,11 +95,11 @@ if __name__ == "__main__":
         loss_fn = torch.nn.BCEWithLogitsLoss()
     else:
         # loss_fn = custom_cross_entropy
-        loss_fn = Tversky_Focal_Loss
+        loss_fn = Tversky_Focal_Loss(weight=torch.tensor(WEIGHTS), device=DEVICE)
 
     scaler = torch.cuda.amp.GradScaler()
 
-    best_dice = 0.0
+    best_loss = 999.0
     train_loss_all, train_acc_all, train_dice_all = [], [], []
     valid_loss_all, valid_acc_all, valid_dice_all = [], [], []
 
@@ -125,18 +125,17 @@ if __name__ == "__main__":
         valid_acc_all.append(valid_acc)
         valid_dice_all.append(valid_dice)
 
-        if valid_dice.mean() > best_dice:
-            best_dice = valid_dice.mean()
+        print(f"Valid AVG. Loss: {valid_loss:.5f}")
+        print(f"Valid AVG. Accuracy: {valid_acc}")
+        print(f"Valid AVG. Dice Score: {valid_dice}")
+
+        if valid_loss < best_loss:
+            best_loss = valid_loss
             checkpoint = {
                 "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
-
             save_checkpoint(checkpoint, file_name=f"model_{e+1}.pth.tar")
-
-        print(f"Valid AVG. Loss: {valid_loss:.5f}")
-        print(f"Valid AVG. Accuracy: {valid_acc}")
-        print(f"Valid AVG. Dice Score: {valid_dice}")
 
         save_predictions_as_imgs(valid_loader, model, folder=f"predictions_epoch{e+1}/")
         scheduler.step(valid_loss)
