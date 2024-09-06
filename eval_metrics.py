@@ -8,22 +8,6 @@ def custom_cross_entropy(predictions, targets):
     return F.cross_entropy(predictions, targets, reduction="mean")
 
 
-# def accuracy_fn(predictions, targets):
-#     if targets.shape[1] == 1:
-#         predictions = torch.sigmoid(predictions)
-#         predicted_classes = predictions > 0.5
-#         target_classes = targets > 0.5
-#     else:
-#         predictions = torch.softmax(predictions, dim=1)
-#         predicted_classes = torch.argmax(predictions, dim=1)  # (B, H, W)
-#         target_classes = torch.argmax(targets, dim=1)  # (B, H, W)
-#
-#     correct = (predicted_classes == target_classes).float()
-#     acc = correct.sum() / correct.numel()
-#
-#     return acc.item()
-
-
 def accuracy_fn(predictions, targets):
     if targets.shape[1] == 1:
         predictions = torch.sigmoid(predictions)
@@ -68,27 +52,6 @@ def class_acc_fn(predictions, targets):
         else:
             accs.append(0.0)
     return accs
-
-
-# def dice_fn(predictions, targets, epsilon=1e-6):
-#     if targets.shape[1] == 1:
-#         predictions = torch.sigmoid(predictions)
-#         predicted_classes = predictions > 0.5
-#         target_classes = targets > 0.5
-#     else:
-#         predictions = torch.softmax(predictions, dim=1)
-#         predicted_classes = torch.argmax(predictions, dim=1)  # (B, H, W)
-#         target_classes = torch.argmax(targets, dim=1)  # (B, H, W)
-#
-#     pred_flat = predicted_classes.view(-1)
-#     target_flat = target_classes.view(-1)
-#
-#     intersection = (pred_flat * target_flat).sum()
-#     union = pred_flat.sum() + target_flat.sum()
-#
-#     dice_coeff = (2.0 * intersection + epsilon) / (union + epsilon)
-#
-#     return dice_coeff.item()
 
 
 def dice_fn(predictions, targets, epsilon=1e-6):

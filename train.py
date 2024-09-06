@@ -1,14 +1,13 @@
 import argparse
-import os
 import torch
 from model import UNet
 from dataset import dataset_loader
 import torch.optim
 import torch.nn
 from eval_metrics import train_fn, valid_fn, custom_cross_entropy
+
 from utils import save_predictions_as_imgs
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-import torch.nn.functional as F
 
 
 def parse_args():
