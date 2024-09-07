@@ -7,7 +7,7 @@ import torch.nn as nn
 
 class Tversky_Focal_Loss(nn.Module):
     def __init__(
-        self, device, weight=None, alpha=0.85, beta=0.15, gamma=3.0, epsilon=1e-7
+        self, device, weight=None, alpha=0.5, beta=0.5, gamma=2.0, epsilon=1e-7
     ):
         super(Tversky_Focal_Loss, self).__init__()
         if weight is not None:
