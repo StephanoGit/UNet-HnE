@@ -71,7 +71,7 @@ if __name__ == "__main__":
     GAMMA = args.gamma
     N_CLASSES = args.n_classes
 
-    train_loader, valid_loader = dataset_loader(
+    train_loader, valid_loader, class_weights = dataset_loader(
         TRAIN_IMG_DIR,
         TRAIN_MASK_DIR,
         VALID_IMG_DIR,
@@ -95,7 +95,7 @@ if __name__ == "__main__":
         loss_fn = torch.nn.BCEWithLogitsLoss()
     else:
         # loss_fn = custom_cross_entropy
-        loss_fn = Tversky_Focal_Loss(weight=torch.tensor(WEIGHTS), device=DEVICE)
+        loss_fn = Tversky_Focal_Loss(weight=torch.tensor(class_weights), device=DEVICE)
 
     scaler = torch.cuda.amp.GradScaler()
 

@@ -229,23 +229,24 @@ def dataset_loader(
     class_weights = {cls: total_samples / count for cls, count in class_counts.items()}
 
     # Assign weights to each sample in the dataset
-    sample_weights = [
-        class_weights[train_dataset.labels[i]] for i in range(len(train_dataset))
-    ]
+    # sample_weights = [
+    #     class_weights[train_dataset.labels[i]] for i in range(len(train_dataset))
+    # ]
 
-    # Create a WeightedRandomSampler
-    weighted_sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True,  # With replacement for random sampling
-    )
+    # # Create a WeightedRandomSampler
+    # weighted_sampler = WeightedRandomSampler(
+    #     weights=sample_weights,
+    #     num_samples=len(sample_weights),
+    #     replacement=True,  # With replacement for random sampling
+    # )
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         num_workers=n_workers,
         pin_memory=pin_memory,
-        sampler=weighted_sampler,
+        shuffle=True,
+        # sampler=weighted_sampler,
     )
 
     valid_dataset = HnE(
@@ -267,4 +268,4 @@ def dataset_loader(
     # for i in range(0, 15):
     # show_image_and_mask(train_dataset, train_dataset.labels[i], i)
 
-    return train_loader, valid_loader
+    return train_loader, valid_loader, class_weights
