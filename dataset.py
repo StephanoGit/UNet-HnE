@@ -228,6 +228,11 @@ def dataset_loader(
 
     class_weights = {cls: total_samples / count for cls, count in class_counts.items()}
 
+    w = [1.0] * max(class_weights.keys())
+    for k, v in class_weights.items():
+        w[k - 1] = v
+    w[0] = 1.0
+
     # Assign weights to each sample in the dataset
     # sample_weights = [
     #     class_weights[train_dataset.labels[i]] for i in range(len(train_dataset))
@@ -264,8 +269,10 @@ def dataset_loader(
     )
 
     print(train_dataset.get_class_distribution())
+    print(class_weights)
+    print(w)
 
     # for i in range(0, 15):
     # show_image_and_mask(train_dataset, train_dataset.labels[i], i)
 
-    return train_loader, valid_loader, class_weights
+    return train_loader, valid_loader, w

@@ -7,11 +7,12 @@ import torch.nn as nn
 
 class Tversky_Focal_Loss(nn.Module):
     def __init__(
-        self, device, weight=None, alpha=0.5, beta=0.5, gamma=2.0, epsilon=1e-7
+        self, device, weight=None, alpha=0.8, beta=0.2, gamma=2.0, epsilon=1e-7
     ):
         super(Tversky_Focal_Loss, self).__init__()
         if weight is not None:
             self.weight = weight.to(device=device)
+            self.weight = self.weight / self.weight.sum()
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -34,7 +35,7 @@ class Tversky_Focal_Loss(nn.Module):
         )  # Sum over spatial dimensions (H, W), resulting in [B, C]
         false_neg = ((1 - probabilities) * annotations).sum(
             dim=(2, 3)
-        )  # Sum over spatial dimensions (H, W), resulting in [B, C]
+        )  # Sum over spatial dimensions (H, W), Resulting in [B, C]
         false_pos = (probabilities * (1 - annotations)).sum(
             dim=(2, 3)
         )  # Sum over spatial dimensions (H, W), resulting in [B, C]
@@ -46,7 +47,6 @@ class Tversky_Focal_Loss(nn.Module):
 
         # Tversky loss per class, averaged over batch and classes
         tversky_loss = 1 - tversky_index  # Shape: [B, C]
-        t_loss = tversky_loss.mean()  # Average over batch and classes
 
         # Focal loss computation
         pt = torch.where(
@@ -56,6 +56,7 @@ class Tversky_Focal_Loss(nn.Module):
 
         # Apply class weights if provided
         if self.weight is not None:
+            tversky_loss *= self.weight.view(1, -1)
             focal_loss *= self.weight.view(1, -1, 1, 1)  # Shape: [1, C, 1, 1]
 
         # Focal loss averaged over spatial dimensions and batch
@@ -63,6 +64,8 @@ class Tversky_Focal_Loss(nn.Module):
             dim=(2, 3)
         )  # Average over spatial dims (H, W) resulting in [B, C]
         f_loss = f_loss.mean()  # Average over batch and classes
+
+        t_loss = tversky_loss.mean()  # Average over batch and classes
 
         # Final loss combination
         total_loss = f_loss * 0.2 + t_loss * 0.8
