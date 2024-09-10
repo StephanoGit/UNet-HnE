@@ -7,7 +7,7 @@ import torch.nn
 from eval_metrics import train_fn, valid_fn, custom_cross_entropy, Tversky_Focal_Loss
 
 from utils import save_predictions_as_imgs, plot_metrics, save_checkpoint
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
 
 
 def parse_args():
@@ -41,6 +41,8 @@ def parse_args():
         help="Device to use",
     )
 
+    parser.add_argument("--alpha", type=float, default=0.8, help="LossFn Alpha")
+    parser.add_argument("--beta", type=float, default=0.2, help="LossFn Beta")
     parser.add_argument("--gamma", type=float, default=3.0, help="LossFn Gamma")
     parser.add_argument(
         "--weights",
@@ -68,6 +70,8 @@ if __name__ == "__main__":
     PIN_MEMORY = args.pin_memory
     LOAD_MODEL = args.load_model
     DEVICE = args.device
+    ALPHA = args.alpha
+    BETA = args.beta
     GAMMA = args.gamma
     N_CLASSES = args.n_classes
 
@@ -89,13 +93,21 @@ if __name__ == "__main__":
 
     model = UNet(3, N_CLASSES, dropout_rate=0.5).to(DEVICE)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
-    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=EPOCHS, eta_min=0
+    )
 
     if N_CLASSES == 1:
         loss_fn = torch.nn.BCEWithLogitsLoss()
     else:
         # loss_fn = custom_cross_entropy
-        loss_fn = Tversky_Focal_Loss(weight=torch.tensor(class_weights), device=DEVICE)
+        loss_fn = Tversky_Focal_Loss(
+            alpha=ALPHA,
+            beta=BETA,
+            gamma=GAMMA,
+            weight=torch.tensor(class_weights),
+            device=DEVICE,
+        )
 
     scaler = torch.cuda.amp.GradScaler()
 

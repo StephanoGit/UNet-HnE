@@ -13,6 +13,7 @@ class Tversky_Focal_Loss(nn.Module):
         if weight is not None:
             self.weight = weight.to(device=device)
             self.weight = self.weight / self.weight.sum()
+            print(self.weight)
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -68,7 +69,7 @@ class Tversky_Focal_Loss(nn.Module):
         t_loss = tversky_loss.mean()  # Average over batch and classes
 
         # Final loss combination
-        total_loss = f_loss * 0.2 + t_loss * 0.8
+        total_loss = f_loss * 0.0 + t_loss * 1.0
         return total_loss
 
 

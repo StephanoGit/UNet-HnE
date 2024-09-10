@@ -6,8 +6,34 @@ from PIL import Image
 import albumentations as A
 import matplotlib.pyplot as plt
 import torch
-from collections import Counter
-from albumentations.pytorch import ToTensorV2
+
+COLOR_RULES = {
+    4: {  # Red color
+        "ranges": [
+            (0.75, 1.0, 5),  # Above 50%, 5 augmentations
+            (0.5, 0.75, 4),  # Between 20% and 50%, 3 augmentations
+            (0.2, 0.5, 3),  # Between 20% and 50%, 3 augmentations
+        ],
+    },
+    3: {
+        "ranges": [
+            (0.5, 1.0, 4),
+            (0.2, 0.5, 3),  # Between 20% and 50%, 3 augmentations
+        ],
+    },
+    2: {
+        "ranges": [
+            (0.5, 1.0, 3),  # Above 50%, 5 augmentations
+            (0.2, 0.5, 2),  # Between 20% and 50%, 3 augmentations
+        ],
+    },
+    1: {
+        "ranges": [
+            (0.75, 1.0, 3),  # Above 50%, 5 augmentations
+            (0.5, 0.75, 2),
+        ],
+    },
+}
 
 COLOR_MAP = {
     "gray": (128, 128, 128),
@@ -18,14 +44,12 @@ COLOR_MAP = {
     "red": (255, 0, 0),
 }
 
-
-CLASS_LABELS = {
-    "gray": 0,
-    "white": 1,
-    "green": 2,
-    "blue": 3,
-    "yellow": 4,
-    "red": 5,
+COLOR_MAP2 = {
+    "white": (255, 255, 255),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
+    "yellow": (255, 255, 0),
+    "red": (255, 0, 0),
 }
 
 
@@ -63,67 +87,66 @@ class HnE(Dataset):
         self.n_classes = n_classes
         self.transform = transform
         self.validation = validation
-        self.images = []
         self.labels = []
-        self.class_distribution = Counter()
-        self.filter_images()
+        self.class_distribution = {
+            i: {"original": 0, "augmented": 0}
+            for i, color in enumerate(COLOR_MAP2.values())
+        }
 
-    def is_valid_mask(self, mask_path):
-        mask = np.array(Image.open(mask_path).convert("RGB"), dtype=np.uint8)
-        center_patch = mask[
-            mask.shape[0] // 2 - 256 : mask.shape[0] // 2 + 256,
-            mask.shape[1] // 2 - 256 : mask.shape[1] // 2 + 256,
-        ]
+        self.images = [
+            f
+            for f in os.listdir(self.img_dir)
+            if not f.startswith(".") and (f.endswith(".png") or f.endswith(".jpg"))
+        ][:400]
 
-        total_pixels = center_patch.shape[0] * center_patch.shape[1]
-        color_counts = {}
+        if self.validation is None:
+            self.image_augmentations = self._determine_augmentations()
 
-        for color_name, rgb in COLOR_MAP.items():
-            color_mask = np.all(center_patch == rgb, axis=-1)
-            color_counts[color_name] = np.sum(color_mask)
+    def _determine_augmentations(self):
+        image_augmentations = []
 
-        background_colors = ["white", "gray"]
-        non_background_colors = set(COLOR_MAP.keys()) - set(background_colors)
+        for img_name in self.images:
+            mask_path = os.path.join(
+                self.msk_dir, "mask_" + img_name.replace(".jpg", ".png")
+            )
+            mask = np.array(Image.open(mask_path).convert("RGB"))
 
-        present_non_background_colors = [
-            color for color in non_background_colors if color_counts[color] > 0
-        ]
+            total_pixels = mask.shape[0] * mask.shape[1]
+            color_proportions = {
+                i: np.all(mask == rgb, axis=-1).sum() / total_pixels
+                for i, (color, rgb) in enumerate(COLOR_MAP2.items())
+            }
 
-        if len(present_non_background_colors) > 1:
-            return None
+            dominant_color = max(color_proportions, key=color_proportions.get)
+            self.class_distribution[dominant_color]["original"] += 1
 
-        for color in non_background_colors:
-            if color_counts[color] / total_pixels >= 0.4:
-                return CLASS_LABELS[color]
-
-        if (color_counts["white"] + color_counts["gray"]) / total_pixels >= 0.5:
-            if color_counts["gray"] > color_counts["white"]:
-                return None
-            else:
-                return CLASS_LABELS["white"]
-
-        return None
-
-    def filter_images(self):
-        for image in os.listdir(self.img_dir):
-            if not image.startswith("."):
-                if self.validation is not None:
-                    mask_path = os.path.join(
-                        self.msk_dir, self.validation + image.replace(".jpg", ".png")
-                    )
+            num_augmentations = 1
+            for color, rule in COLOR_RULES.items():
+                proportion = color_proportions.get(color, 0)
+                for min_val, max_val, aug_count in rule["ranges"]:
+                    if min_val <= proportion <= max_val:
+                        num_augmentations = aug_count
+                        self.class_distribution[color]["augmented"] += aug_count
+                        break  # Use the first matching range
+                if num_augmentations > 1:  # first matching color
+                    break
                 else:
-                    mask_path = os.path.join(
-                        self.msk_dir, "mask_" + image.replace(".jpg", ".png")
-                    )
-                label = self.is_valid_mask(mask_path)
+                    self.class_distribution[dominant_color]["augmented"] += 1
 
-                if label is not None:
-                    self.images.append(image)
-                    self.labels.append(label)
-                    self.class_distribution[label] += 1
+            image_augmentations.extend(
+                [(img_name, i) for i in range(num_augmentations)]
+            )
+
+        print(f"Total image augmentations: {len(image_augmentations)}")
+        print(f"Class Distribution: {self.class_distribution}")
+        return image_augmentations
 
     def __len__(self):
-        return len(self.images)
+        return (
+            len(self.image_augmentations)
+            if self.validation is None
+            else len(self.images)
+        )
 
     def rgb_to_label(self, mask):
         label_mask = np.zeros(
@@ -148,15 +171,19 @@ class HnE(Dataset):
         return label_mask
 
     def __getitem__(self, idx):
-        img_path = os.path.join(self.img_dir, self.images[idx])
+        if self.validation is None:
+            img_name, _ = self.image_augmentations[idx]
+        else:
+            img_name = self.images[idx]
 
+        img_path = os.path.join(self.img_dir, img_name)
         if self.validation is not None:
             mask_path = os.path.join(
-                self.msk_dir, self.validation + self.images[idx].replace(".jpg", ".png")
+                self.msk_dir, self.validation + img_name.replace(".jpg", ".png")
             )
         else:
             mask_path = os.path.join(
-                self.msk_dir, "mask_" + self.images[idx].replace(".jpg", ".png")
+                self.msk_dir, "mask_" + img_name.replace(".jpg", ".png")
             )
 
         image = np.array(Image.open(img_path).convert("RGB"), dtype=np.float32) / 255.0
@@ -173,9 +200,6 @@ class HnE(Dataset):
         mask = torch.from_numpy(mask).permute(2, 0, 1).float()
 
         return image, mask
-
-    def get_class_distribution(self):
-        return dict(self.class_distribution)
 
 
 def dataset_loader(
@@ -222,28 +246,20 @@ def dataset_loader(
         train_img_dir, train_msk_dir, transform=train_transform, n_classes=n_classes
     )
 
-    # Calculate class weights based on class distribution
-    class_counts = train_dataset.get_class_distribution()
-    total_samples = sum(class_counts.values())
+    augmented_values = [
+        color_data["augmented"]
+        for color_data in train_dataset.class_distribution.values()
+    ]
 
-    class_weights = {cls: total_samples / count for cls, count in class_counts.items()}
+    total_augmented = sum(augmented_values)
 
-    w = [1.0] * max(class_weights.keys())
-    for k, v in class_weights.items():
-        w[k - 1] = v
-    w[0] = 1.0
+    weights = {
+        color: total_augmented / (color_data["augmented"] + 1e-8)
+        for color, color_data in train_dataset.class_distribution.items()
+    }
 
-    # Assign weights to each sample in the dataset
-    # sample_weights = [
-    #     class_weights[train_dataset.labels[i]] for i in range(len(train_dataset))
-    # ]
-
-    # # Create a WeightedRandomSampler
-    # weighted_sampler = WeightedRandomSampler(
-    #     weights=sample_weights,
-    #     num_samples=len(sample_weights),
-    #     replacement=True,  # With replacement for random sampling
-    # )
+    w_list = list(weights.values())
+    w_list[0] = 1.0
 
     train_loader = DataLoader(
         train_dataset,
@@ -251,7 +267,6 @@ def dataset_loader(
         num_workers=n_workers,
         pin_memory=pin_memory,
         shuffle=True,
-        # sampler=weighted_sampler,
     )
 
     valid_dataset = HnE(
@@ -268,11 +283,10 @@ def dataset_loader(
         pin_memory=pin_memory,
     )
 
-    print(train_dataset.get_class_distribution())
-    print(class_weights)
-    print(w)
+    print(train_dataset.class_distribution)
+    print(w_list)
 
     # for i in range(0, 15):
     # show_image_and_mask(train_dataset, train_dataset.labels[i], i)
 
-    return train_loader, valid_loader, w
+    return train_loader, valid_loader, w_list
